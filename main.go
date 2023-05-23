@@ -31,20 +31,26 @@ func main() {
 	ui.DisplayScanResults(scanResponses)
 	selections := ui.RequestUserSelection(scanResponses)
 
-	for _, s := range selections {
+	for i, s := range selections {
 		relativeWorktree := worktree.GetRelativeWorktreePath(scanResponses[s].Worktree.Path(), bareDir)
 		isSafe := gitHandler.CheckWorktreeRemovalSafe(relativeWorktree)
 
 		if !isSafe {
 			approved := ui.RequestUnsafeWorktreeRemoval(scanResponses[s].Worktree.Branch())
 			if !approved {
-				continue
+				selections[i] = -1
 			}
-			gitHandler.RemoveWorktree(relativeWorktree, true)
-			continue
 		}
 
-		gitHandler.RemoveWorktree(relativeWorktree, false)
+	}
+
+	for _, s := range selections {
+		if s == -1 {
+			return
+		}
+
+		relativeWorktree := worktree.GetRelativeWorktreePath(scanResponses[s].Worktree.Path(), bareDir)
+		gitHandler.RemoveWorktree(relativeWorktree, true)
 	}
 
 	os.Exit(0)
