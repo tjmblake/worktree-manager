@@ -1,26 +1,25 @@
 package scanner
 
+import (
+	"github.com/tjmblake/worktree-manager/models"
+)
+
+
 type BatchScanner struct {
 	BareDir string
 }
 
-type Scannable interface {
-	Path() string
-	Branch() string
-}
+func (b BatchScanner) Run(worktreeList *models.WorktreeList) {
+	scannerChannel := make(chan models.Worktree)
 
-func (b BatchScanner) Run(locations []Scannable) []ScanResponse {
-	scannerChannel := make(chan ScanResponse)
-	scanResponses := []ScanResponse{}
-
-	for _, lo := range locations {
+	for _, lo := range *worktreeList {
 		scanner := NewScanner(lo, b.BareDir, scannerChannel)
 		go scanner.ScanLastModified()
 	}
 
-	for i := 0; i < len(locations); i++ {
-		scanResponses = append(scanResponses, <-scannerChannel)
+	for i := 0; i < len(*worktreeList); i++ {
+		updatedWorktree := <-scannerChannel
+		(*worktreeList)[updatedWorktree.Index] = updatedWorktree
 	}
 
-	return scanResponses
 }

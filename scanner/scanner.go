@@ -6,28 +6,24 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/tjmblake/worktree-manager/models"
 )
 
 var ignoreList []string = []string{"node_modules", ".yarn"}
 
-type Scanner struct {
-	Worktree Scannable
-	channel  chan ScanResponse
+type WorktreeScanner struct {
+	Worktree models.Worktree
+	channel  chan models.Worktree
 	BareDir  string
 }
 
-type ScanResponse struct {
-	Worktree Scannable
-	Data     time.Time
-	BareDir  string
+func NewScanner(worktree models.Worktree, bareDir string, channel chan models.Worktree) WorktreeScanner {
+	return WorktreeScanner{Worktree: worktree, channel: channel, BareDir: bareDir}
 }
 
-func NewScanner(worktree Scannable, bareDir string, channel chan ScanResponse) Scanner {
-	return Scanner{Worktree: worktree, channel: channel, BareDir: bareDir}
-}
-
-func (s Scanner) ScanLastModified() {
-	rootFS := os.DirFS(s.Worktree.Path())
+func (s WorktreeScanner) ScanLastModified() {
+	rootFS := os.DirFS(s.Worktree.Path)
 	var lastModified time.Time
 
 	fs.WalkDir(rootFS, ".", func(filePath string, d fs.DirEntry, err error) error {
@@ -54,7 +50,8 @@ func (s Scanner) ScanLastModified() {
 		return nil
 	})
 
-	s.channel <- ScanResponse{Worktree: s.Worktree, Data: lastModified, BareDir: s.BareDir}
+	s.Worktree.LastModified = lastModified
+	s.channel <- s.Worktree
 }
 
 func checkIfIgnored(path string) bool {

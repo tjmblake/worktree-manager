@@ -4,13 +4,15 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+
+	"github.com/tjmblake/worktree-manager/models"
 )
 
 type Git struct {
 	BareDir string
 }
 
-func (g Git) GetWorktreeList() []byte {
+func (g Git) GetWorktreeList() models.WorktreeList {
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = g.BareDir
 	rawWorktreeList, err := cmd.Output()
@@ -19,13 +21,15 @@ func (g Git) GetWorktreeList() []byte {
 		log.Fatal(err)
 	}
 
-	trimRawWorktreeList(&rawWorktreeList)
-	return rawWorktreeList
-}
+	// Remove Header
+	postHeader := strings.Index(string(rawWorktreeList), "\nworktree")
+	rawWorktreeList = (rawWorktreeList)[postHeader+1:]
 
-func trimRawWorktreeList(rawWorktreeList *[]byte) {
-	postHeader := strings.Index(string(*rawWorktreeList), "\nworktree")
-	*rawWorktreeList = (*rawWorktreeList)[postHeader+1:]
+	worktrees := parseWorktrees(rawWorktreeList, g.BareDir)
+
+	g.checkSafeToRemove(&worktrees)
+
+	return worktrees
 }
 
 func (g Git) CheckWorktreeRemovalSafe(branch string) bool {
@@ -38,7 +42,6 @@ func (g Git) CheckWorktreeRemovalSafe(branch string) bool {
 	}
 
 	if len(output) == 0 {
-		log.Println("Safe To Remove: ", branch)
 		return true
 	}
 
@@ -54,11 +57,45 @@ func (g Git) RemoveWorktree(branch string, force bool) {
 
 	cmd := exec.Command("git", "worktree", "remove", branch, forceArg)
 	cmd.Dir = g.BareDir
-	output, err := cmd.Output()
+	_, err := cmd.Output()
 
 	if err != nil {
 		log.Fatal(err)
 	}
+}
 
-	log.Println(string(output))
+func parseWorktrees(rawWorktreeList []byte, dir string) models.WorktreeList {
+	worktrees := []models.Worktree{}
+	rawWorktrees := strings.Split(string(rawWorktreeList), "\n\n")
+
+	for i, v := range rawWorktrees {
+		split := strings.Split(v, "\n")
+		newTree := models.Worktree{Index: i}
+
+		for _, s := range split {
+			val := strings.Split(s, " ")
+
+			if len(val) == 2 {
+				if val[0] == "worktree" {
+					newTree.Path = val[1]
+				}
+				if val[0] == "branch" {
+					newTree.Branch = strings.TrimPrefix(val[1], "refs/heads/")
+				}
+			}
+		}
+
+		if newTree.Validate() {
+			worktrees = append(worktrees, newTree)
+		}
+
+	}
+
+	return worktrees
+}
+
+func (g Git) checkSafeToRemove(worktrees *models.WorktreeList) {
+	for i, worktree := range *worktrees {
+		(*worktrees)[i].SafeToRemove = g.CheckWorktreeRemovalSafe(worktree.Branch)
+	}
 }
